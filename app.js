@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -451,8 +451,8 @@ function camposVacios() {
   return { titulo: '', fecha: '', hora: '', lugar: '', notas: '', productos: '', texto: '', ingredientes: '', preparacion: '', fijada: false };
 }
 
-function abrirApuntar() {
-  const porDefecto = { medico: 'medico', ocio: 'ocio', varios: 'varios', recetas: 'receta' }[tab] || '';
+function abrirApuntar(seccion, dictarYa) {
+  const porDefecto = seccion || { medico: 'medico', ocio: 'ocio', varios: 'varios', recetas: 'receta', compra: 'compra' }[tab] || '';
   abrirHoja({
     tipo: 'apuntar',
     texto: '',
@@ -461,6 +461,12 @@ function abrirApuntar() {
     campos: camposVacios(),
     tocados: {}
   });
+  // Desde el micro de Compra: empieza a escuchar directamente.
+  if (dictarYa) dictarEnHoja();
+}
+
+function dictarEnHoja() {
+  dictar($('#texto-dictado'), $('#boton-micro'), null, ' ');
 }
 
 /** Rellena la propuesta a partir de lo dictado, sin pisar lo que se haya corregido a mano. */
@@ -664,8 +670,8 @@ function dictar(campo, boton, alTerminar, separador) {
   let huboTexto = false;
   boton.classList.add('escuchando');
   r.onresult = function (ev) {
-    // Cada pausa al hablar llega como un trozo aparte: en la compra, cada
-    // trozo es un producto distinto.
+    // Cada pausa al hablar llega como un trozo aparte; se unen con espacios
+    // y la compra se separa después por palabras.
     const trozos = [];
     for (let i = 0; i < ev.results.length; i++) {
       const s = ev.results[i][0].transcript.trim();
@@ -722,8 +728,8 @@ document.addEventListener('click', function (e) {
     case 'marcar': marcarProducto(id); break;
     case 'quitar-comprados': quitarComprados(); break;
     case 'anadir-compra': anadirProductosDesdeCampo(); break;
-    case 'dictar-compra': dictar($('#nuevo-producto'), el, anadirProductosDesdeCampo, ', '); break;
-    case 'dictar': dictar($('#texto-dictado'), el); break;
+    case 'dictar-compra': abrirApuntar('compra', true); break;
+    case 'dictar': dictarEnHoja(); break;
     case 'cerrar-hoja': cerrarHoja(); break;
     case 'guardar-hoja': guardarHoja(el); break;
     case 'borrar-hoja': borrarHoja(); break;
