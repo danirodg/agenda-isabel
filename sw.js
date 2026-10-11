@@ -1,6 +1,6 @@
 // Service worker: guarda la app para que abra rápido y sin conexión.
 // Los datos (Google) nunca se guardan aquí: siempre se piden en directo.
-const CACHE = 'agenda-isabel-v4';
+const CACHE = 'agenda-isabel-v5';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -27,7 +27,9 @@ self.addEventListener('fetch', function (e) {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request).then(function (resp) {
+    // "no-store": se salta la caché del navegador y de GitHub, así las
+    // actualizaciones llegan en cuanto se publican.
+    fetch(e.request, { cache: 'no-store' }).then(function (resp) {
       const copia = resp.clone();
       caches.open(CACHE).then(function (c) { c.put(e.request, copia); });
       return resp;

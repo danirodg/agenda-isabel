@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -241,7 +241,8 @@ function pantallaInicio() {
     if (despues.length > 10) html += '<div class="vacio" style="margin-top:12px">Y ' + (despues.length - 10) + ' más en Médico y Ocio</div>';
   }
   if (sinFecha.length) html += '<h2 class="titulo-bloque">Sin fecha</h2><div class="lista">' + sinFecha.map(tarjetaCita).join('') + '</div>';
-  html += '<button type="button" class="enlace-config" data-accion="ajustes">Ajustes</button>';
+  html += '<button type="button" class="enlace-config" data-accion="ajustes">Ajustes</button>' +
+    '<div style="text-align:center;font-size:13px;color:var(--suave);margin-top:6px">Versión ' + VERSION + '</div>';
   return html;
 }
 
@@ -863,6 +864,19 @@ function claveDesdeEnlace() {
   }, 60000);
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* sin modo offline */ });
+    // Cuando llega una versión nueva de la app, se recarga una vez para usarla.
+    const habiaControlador = !!navigator.serviceWorker.controller;
+    let recargada = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (habiaControlador && !recargada && !hojaActual) { recargada = true; location.reload(); }
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(function (reg) {
+        // Busca actualizaciones cada vez que se vuelve a la app
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') reg.update().catch(function () {});
+        });
+      })
+      .catch(function () { /* sin modo offline */ });
   }
 })();
