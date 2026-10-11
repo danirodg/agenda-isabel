@@ -212,10 +212,56 @@ function detectarSeccion(n) {
 function separarProductos(par) {
   quitarDe(par, /^(?:apunta(?:r)? |anota(?:r)? |anade |pon )?(?:en la lista(?: de la compra)? )?(?:que )?(?:hay que )?(?:comprar|compra)(?: de)?:? /);
   quitarDe(par, / (?:en|a) la lista(?: de la compra)?$/);
-  return compactar(par).o
-    .split(/\s*,\s*|\s+y\s+|\s+e\s+/)
-    .map(function (p) { return mayuscula(p.replace(/^[\s.;:-]+|[\s.;:-]+$/g, '')); })
+  const texto = compactar(par).o;
+  // Si está escrito con comas o en líneas, se respeta tal cual.
+  // Dictado sin comas ("leche pan y huevos"): se separa por palabras.
+  const trozos = /[,;\n.]/.test(texto)
+    ? texto.split(/\s*[,;\n.]\s*|\s+y\s+|\s+e\s+/)
+    : separarSinComas(texto);
+  return trozos
+    .map(function (p) { return mayuscula(p.replace(/^[\s.;:,-]+|[\s.;:,-]+$/g, '')); })
     .filter(function (p) { return p; });
+}
+
+// Palabras que unen un producto con la siguiente ("pan DE molde", "agua CON gas")
+const UNIONES = ['de', 'del', 'con', 'sin', 'para', 'al', 'a', 'en', 'la', 'el', 'los', 'las'];
+// Cantidades ("UNA DOCENA de huevos", "2 KILOS de tomates", "MEDIO kilo")
+const CANTIDADES = ['un', 'una', 'uno', 'unos', 'unas', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'medio', 'media', 'cuarto', 'kilo', 'kilos', 'kg', 'gramos', 'g', 'litro', 'litros', 'l',
+  'paquete', 'paquetes', 'bote', 'botes', 'lata', 'latas', 'botella', 'botellas', 'docena', 'docenas', 'bolsa', 'bolsas',
+  'caja', 'cajas', 'barra', 'barras', 'tarro', 'tarros', 'carton', 'cartones', 'brick', 'bricks', 'pack', 'packs',
+  'sobre', 'sobres', 'trozo', 'trozos', 'pieza', 'piezas', 'bandeja', 'bandejas', 'rollo', 'rollos', 'tableta', 'tabletas'];
+// Palabras que completan al producto anterior ("leche SEMIDESNATADA", "papel HIGIÉNICO")
+const COMPLEMENTOS = ['semidesnatada', 'semidesnatado', 'desnatada', 'desnatado', 'entera', 'entero', 'integral', 'integrales',
+  'natural', 'naturales', 'fresca', 'fresco', 'frescas', 'frescos', 'frito', 'frita', 'fritos', 'fritas', 'rallado', 'rallada',
+  'molido', 'molida', 'cocido', 'cocida', 'picada', 'picado', 'congelado', 'congelada', 'congelados', 'congeladas',
+  'curado', 'curada', 'tierno', 'tierna', 'serrano', 'iberico', 'york', 'cocido', 'manchego', 'azul', 'blanco', 'blanca',
+  'blancos', 'blancas', 'negro', 'negra', 'negros', 'negras', 'verde', 'verdes', 'rojo', 'roja', 'rojos', 'rojas',
+  'amarillo', 'amarilla', 'virgen', 'extra', 'mineral', 'higienico', 'sin', 'light', 'zero', 'cola', 'griego', 'griegos',
+  'camperos', 'campera', 'ecologico', 'ecologica', 'ecologicos', 'ecologicas', 'grande', 'grandes', 'pequeno', 'pequena',
+  'pequenos', 'pequenas', 'hidratante', 'liquido', 'liquida', 'dulce', 'salado', 'salada', 'tostado', 'tostada', 'bio'];
+
+function separarSinComas(texto) {
+  const palabras = texto.split(/\s+/).filter(function (p) { return p; });
+  if (palabras.length < 3) return palabras.length === 2 && /^(y|e)$/i.test(palabras[1]) ? [palabras[0]] : [texto]; // "pan bimbo": un solo producto
+  const productos = [];
+  let actual = [];
+  palabras.forEach(function (p, i) {
+    const n = normalizar(p);
+    if (n === 'y' || n === 'e') { // "y" siempre separa productos
+      if (actual.length) productos.push(actual.join(' '));
+      actual = [];
+      return;
+    }
+    const previa = i ? normalizar(palabras[i - 1]) : '';
+    const empiezaNuevo = actual.length > 0 &&
+      UNIONES.indexOf(previa) < 0 && CANTIDADES.indexOf(previa) < 0 && !/^\d/.test(previa) &&
+      UNIONES.indexOf(n) < 0 && COMPLEMENTOS.indexOf(n) < 0;
+    if (empiezaNuevo) { productos.push(actual.join(' ')); actual = []; }
+    actual.push(p);
+  });
+  if (actual.length) productos.push(actual.join(' '));
+  return productos;
 }
 
 function fechaConDia(hoy, dia, mes, anio) {

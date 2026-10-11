@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -644,7 +644,7 @@ function pararDictado() {
  * Dicta con el reconocimiento de voz del navegador. Si el iPhone no lo
  * permite dentro de la app, se abre el teclado para usar su micrófono.
  */
-function dictar(campo, boton, alTerminar) {
+function dictar(campo, boton, alTerminar, separador) {
   if (reconocimiento) { pararDictado(); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const usarTeclado = function (msg) {
@@ -664,9 +664,14 @@ function dictar(campo, boton, alTerminar) {
   let huboTexto = false;
   boton.classList.add('escuchando');
   r.onresult = function (ev) {
-    let t = '';
-    for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
-    t = t.trim();
+    // Cada pausa al hablar llega como un trozo aparte: en la compra, cada
+    // trozo es un producto distinto.
+    const trozos = [];
+    for (let i = 0; i < ev.results.length; i++) {
+      const s = ev.results[i][0].transcript.trim();
+      if (s) trozos.push(s);
+    }
+    let t = trozos.join(separador || ' ');
     if (t) huboTexto = true;
     campo.value = (base ? base + ' ' : '') + t;
     campo.dispatchEvent(new Event('input', { bubbles: true }));
@@ -717,7 +722,7 @@ document.addEventListener('click', function (e) {
     case 'marcar': marcarProducto(id); break;
     case 'quitar-comprados': quitarComprados(); break;
     case 'anadir-compra': anadirProductosDesdeCampo(); break;
-    case 'dictar-compra': dictar($('#nuevo-producto'), el, anadirProductosDesdeCampo); break;
+    case 'dictar-compra': dictar($('#nuevo-producto'), el, anadirProductosDesdeCampo, ', '); break;
     case 'dictar': dictar($('#texto-dictado'), el); break;
     case 'cerrar-hoja': cerrarHoja(); break;
     case 'guardar-hoja': guardarHoja(el); break;
