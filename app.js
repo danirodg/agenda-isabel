@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -527,6 +527,7 @@ function abrirEditarReceta(id) {
 }
 
 function guardarHoja(boton) {
+  pararDictado();
   const h = hojaActual;
   const c = h.campos;
   let promesa, mensaje;
@@ -640,9 +641,22 @@ function quitarComprados() {
 
 // ------------------------------------------------------------------ DICTADO
 
+let temporizadorSilencio = null;
+let temporizadorMaximo = null;
+
+/**
+ * Apaga el micrófono del todo. En el iPhone, "stop" a veces deja el
+ * micrófono encendido; "abort" lo suelta en el momento.
+ */
 function pararDictado() {
-  if (reconocimiento) { try { reconocimiento.stop(); } catch (e) { /* nada */ } }
+  clearTimeout(temporizadorSilencio);
+  clearTimeout(temporizadorMaximo);
+  const r = reconocimiento;
   reconocimiento = null;
+  if (r) {
+    r.onresult = r.onerror = r.onend = null;
+    try { r.abort(); } catch (e) { try { r.stop(); } catch (e2) { /* nada */ } }
+  }
   document.querySelectorAll('.escuchando').forEach(function (el) { el.classList.remove('escuchando'); });
 }
 
@@ -669,7 +683,24 @@ function dictar(campo, boton, alTerminar, separador) {
   const base = campo.value.trim();
   let huboTexto = false;
   boton.classList.add('escuchando');
+
+  // El iPhone no siempre deja de escuchar solo: se apaga tras unos segundos
+  // de silencio, y como mucho al minuto.
+  const terminar = function () {
+    if (reconocimiento !== r) return;
+    const habiaTexto = huboTexto;
+    pararDictado();
+    if (habiaTexto && alTerminar) alTerminar();
+  };
+  const esperarSilencio = function (ms) {
+    clearTimeout(temporizadorSilencio);
+    temporizadorSilencio = setTimeout(terminar, ms);
+  };
+  esperarSilencio(7000);                       // margen para empezar a hablar
+  temporizadorMaximo = setTimeout(terminar, 60000);
+
   r.onresult = function (ev) {
+    esperarSilencio(2500);                     // 2,5 s sin hablar = fin
     // Cada pausa al hablar llega como un trozo aparte; se unen con espacios
     // y la compra se separa después por palabras.
     const trozos = [];
@@ -689,11 +720,7 @@ function dictar(campo, boton, alTerminar, separador) {
       avisar('No te he oído. Pulsa el micrófono y habla');
     }
   };
-  r.onend = function () {
-    const fue = reconocimiento === r;
-    pararDictado();
-    if (fue && huboTexto && alTerminar) alTerminar();
-  };
+  r.onend = terminar;
   try { r.start(); } catch (e) { usarTeclado(); }
 }
 
@@ -828,7 +855,9 @@ function claveDesdeEnlace() {
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') cargar(true);
+    else pararDictado(); // al salir de la app, el micrófono se apaga
   });
+  window.addEventListener('pagehide', pararDictado);
   setInterval(function () {
     if (document.visibilityState === 'visible' && !hojaActual) cargar(true);
   }, 60000);
