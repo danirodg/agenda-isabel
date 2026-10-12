@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.5';
+const VERSION = '1.0.7';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -236,10 +236,24 @@ function pantallaInicio() {
     (deHoy.length ? deHoy.map(tarjetaCita).join('') : '<div class="vacio">No tienes nada apuntado para hoy</div>') +
     '</div>';
   if (semana.length) html += '<h2 class="titulo-bloque">Esta semana</h2><div class="lista">' + semana.map(tarjetaCita).join('') + '</div>';
-  if (despues.length) {
-    html += '<h2 class="titulo-bloque">Más adelante</h2><div class="lista">' + despues.slice(0, 10).map(tarjetaCita).join('') + '</div>';
-    if (despues.length > 10) html += '<div class="vacio" style="margin-top:12px">Y ' + (despues.length - 10) + ' más en Médico y Ocio</div>';
-  }
+  // Lo de más adelante, separado por meses: "Octubre", "Noviembre", "Enero 2027"…
+  const anioHoy = partesFecha(hoy).a;
+  let mesActual = '';
+  despues.forEach(function (c) {
+    const p = partesFecha(c.fecha);
+    const clave = p.a + '-' + p.m;
+    if (clave !== mesActual) {
+      if (mesActual) html += '</div>';
+      mesActual = clave;
+      const nombre = NOMBRES_MES[p.m - 1];
+      const esEsteMes = p.a === anioHoy && p.m === partesFecha(hoy).m;
+      const titulo = esEsteMes ? 'Este mes'
+        : nombre.charAt(0).toUpperCase() + nombre.slice(1) + (p.a !== anioHoy ? ' ' + p.a : '');
+      html += '<h2 class="titulo-bloque">' + titulo + '</h2><div class="lista">';
+    }
+    html += tarjetaCita(c);
+  });
+  if (mesActual) html += '</div>';
   if (sinFecha.length) html += '<h2 class="titulo-bloque">Sin fecha</h2><div class="lista">' + sinFecha.map(tarjetaCita).join('') + '</div>';
   html += '<button type="button" class="enlace-config" data-accion="ajustes">Ajustes</button>' +
     '<div style="text-align:center;font-size:13px;color:var(--suave);margin-top:6px">Versión ' + VERSION + '</div>';
