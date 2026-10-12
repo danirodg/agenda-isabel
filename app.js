@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.4';
+const VERSION = '1.0.5';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -570,7 +570,7 @@ function guardarHoja(boton) {
     guardarCache();
     cerrarHoja();
     render();
-    avisar(mensaje);
+    if (!soltarMicro(mensaje)) avisar(mensaje);
   }).catch(function (e) {
     boton.disabled = false;
     boton.textContent = h.tipo === 'apuntar' ? 'Guardar' : 'Guardar cambios';
@@ -644,6 +644,43 @@ function quitarComprados() {
 
 let temporizadorSilencio = null;
 let temporizadorMaximo = null;
+let microUsado = false;
+const SS_RESTAURAR = 'agendaIsabel.restaurar';
+
+function esIOS() {
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * En el iPhone, una web que ha usado el dictado no suelta el micrófono
+ * aunque se le mande parar (fallo de iOS). Lo único que lo libera es
+ * cerrar la página, así que la app se recarga ella sola, guardando antes
+ * lo que había en pantalla para dejarlo exactamente igual.
+ * Devuelve true si va a recargar.
+ */
+function soltarMicro(aviso) {
+  if (!microUsado || !esIOS()) { microUsado = false; return false; }
+  microUsado = false;
+  try {
+    sessionStorage.setItem(SS_RESTAURAR, JSON.stringify({
+      tab: tab,
+      hoja: hojaActual ? JSON.parse(JSON.stringify(hojaActual)) : null,
+      aviso: aviso || ''
+    }));
+  } catch (e) { /* sin almacenamiento: se recarga igualmente */ }
+  setTimeout(function () { location.reload(); }, 350);
+  return true;
+}
+
+function restaurarTrasSoltarMicro() {
+  let estado = null;
+  try {
+    estado = JSON.parse(sessionStorage.getItem(SS_RESTAURAR) || 'null');
+    sessionStorage.removeItem(SS_RESTAURAR);
+  } catch (e) { estado = null; }
+  return estado;
+}
 
 /**
  * Apaga el micrófono del todo. En el iPhone, "stop" a veces deja el
@@ -666,7 +703,7 @@ function pararDictado() {
  * permite dentro de la app, se abre el teclado para usar su micrófono.
  */
 function dictar(campo, boton, alTerminar, separador) {
-  if (reconocimiento) { pararDictado(); return; }
+  if (reconocimiento) { pararDictado(); soltarMicro(); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const usarTeclado = function (msg) {
     pararDictado();
@@ -692,6 +729,7 @@ function dictar(campo, boton, alTerminar, separador) {
     const habiaTexto = huboTexto;
     pararDictado();
     if (habiaTexto && alTerminar) alTerminar();
+    soltarMicro();
   };
   const esperarSilencio = function (ms) {
     clearTimeout(temporizadorSilencio);
@@ -722,7 +760,7 @@ function dictar(campo, boton, alTerminar, separador) {
     }
   };
   r.onend = terminar;
-  try { r.start(); } catch (e) { usarTeclado(); }
+  try { r.start(); microUsado = true; } catch (e) { usarTeclado(); }
 }
 
 // ------------------------------------------------------------------ EVENTOS
@@ -758,7 +796,7 @@ document.addEventListener('click', function (e) {
     case 'anadir-compra': anadirProductosDesdeCampo(); break;
     case 'dictar-compra': abrirApuntar('compra', true); break;
     case 'dictar': dictarEnHoja(); break;
-    case 'cerrar-hoja': cerrarHoja(); break;
+    case 'cerrar-hoja': cerrarHoja(); soltarMicro(); break;
     case 'guardar-hoja': guardarHoja(el); break;
     case 'borrar-hoja': borrarHoja(); break;
     case 'elegir-seccion': {
@@ -848,15 +886,22 @@ function claveDesdeEnlace() {
 
 (function iniciar() {
   claveDesdeEnlace();
+  const previo = restaurarTrasSoltarMicro();
+  if (previo && previo.tab) tab = previo.tab;
   render();
+  if (previo && previo.hoja && clave) abrirHoja(previo.hoja);
+  if (previo && previo.aviso) avisar(previo.aviso);
   cargar(true);
   window.addEventListener('hashchange', function () {
     if (claveDesdeEnlace()) { render(); cargar(); }
   });
 
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') cargar(true);
-    else pararDictado(); // al salir de la app, el micrófono se apaga
+    if (document.visibilityState === 'visible') {
+      if (!soltarMicro()) cargar(true); // si se usó el micro al salir, se libera al volver
+    } else {
+      pararDictado(); // al salir de la app, el dictado se para
+    }
   });
   window.addEventListener('pagehide', pararDictado);
   setInterval(function () {
