@@ -6,7 +6,7 @@
 'use strict';
 
 const API = 'https://script.google.com/macros/s/AKfycbzVH0s4MHjfH50HQnPandgVEtyL-q036agcPir_SIomSYOCZA514_-BrD6cK5h7TlkJfw/exec';
-const VERSION = '1.0.7';
+const VERSION = '1.1.0';
 const LS_CLAVE = 'agendaIsabel.clave';
 const LS_DATOS = 'agendaIsabel.datos';
 
@@ -16,6 +16,7 @@ let clave = leerLS(LS_CLAVE) || '';
 let datos = leerJSON(LS_DATOS) || { citas: [], recetas: [], compra: [], varios: [] };
 let tab = 'inicio';
 const pasadasAbiertas = { medico: false, ocio: false };
+let filtroMedico = 'todas'; // 'todas' | 'mias' | 'papa'
 let recetaAbierta = null;
 let hojaActual = null; // { tipo:'apuntar'|'editar', ... }
 let reconocimiento = null;
@@ -208,14 +209,21 @@ function pantallaConfig() {
     '</div>';
 }
 
+function esDePapa(c) { return c.seccion === 'medico' && c.persona === 'papa'; }
+
+function etiquetaCita(c) {
+  if (esDePapa(c)) return 'PAPÁ · MÉDICO';
+  return c.seccion === 'medico' ? 'MÉDICO' : 'OCIO';
+}
+
 function tarjetaCita(c) {
   const p = partesFecha(c.fecha);
   const sub = [c.hora, c.lugar].filter(Boolean).join(' · ');
-  return '<button type="button" class="cita ' + c.seccion + '" data-accion="editar-cita" data-id="' + esc(c.id) + '">' +
+  return '<button type="button" class="cita ' + c.seccion + (esDePapa(c) ? ' papa' : '') + '" data-accion="editar-cita" data-id="' + esc(c.id) + '">' +
     '<div class="dia"><div class="ds">' + (p ? DIAS_CORTOS[diaSemana(c.fecha)] : '') + '</div><div class="dn">' + (p ? p.d : '—') + '</div></div>' +
     '<div class="info"><div class="t">' + esc(c.titulo) + '</div>' +
     (sub ? '<div class="s">' + esc(sub) + '</div>' : '') +
-    '<div class="etq">' + (c.seccion === 'medico' ? 'MÉDICO' : 'OCIO') + '</div></div></button>';
+    '<div class="etq">' + etiquetaCita(c) + '</div></div></button>';
 }
 
 function pantallaInicio() {
@@ -261,7 +269,8 @@ function pantallaInicio() {
 }
 
 function tarjetaCitaLarga(c, pasada) {
-  return '<button type="button" class="cita-larga ' + c.seccion + (pasada ? ' pasada' : '') + '" data-accion="editar-cita" data-id="' + esc(c.id) + '">' +
+  return '<button type="button" class="cita-larga ' + c.seccion + (esDePapa(c) ? ' papa' : '') + (pasada ? ' pasada' : '') + '" data-accion="editar-cita" data-id="' + esc(c.id) + '">' +
+    (esDePapa(c) ? '<div class="etq-papa">PAPÁ</div>' : '') +
     '<div class="cuando">' + esc(cuandoCita(c)) + '</div>' +
     '<div class="t">' + esc(c.titulo) + '</div>' +
     (c.lugar ? '<div class="s">' + esc(c.lugar) + '</div>' : '') +
@@ -271,11 +280,23 @@ function tarjetaCitaLarga(c, pasada) {
 
 function pantallaCitas(sec) {
   const hoy = hoyMadrid();
-  const todas = ordenar((datos.citas || []).filter(function (c) { return c.seccion === sec; }));
+  const todas = ordenar((datos.citas || []).filter(function (c) {
+    if (c.seccion !== sec) return false;
+    if (sec !== 'medico' || filtroMedico === 'todas') return true;
+    return filtroMedico === 'papa' ? esDePapa(c) : !esDePapa(c);
+  }));
   const proximas = todas.filter(function (c) { return !c.fecha || c.fecha >= hoy; });
   const pasadas = todas.filter(function (c) { return c.fecha && c.fecha < hoy; }).reverse();
   const nombre = sec === 'medico' ? 'Médico' : 'Ocio';
-  let html = cabecera(sec, nombre) +
+  let filtro = '';
+  if (sec === 'medico') {
+    filtro = '<div class="filtro" role="group" aria-label="De quién">' +
+      [['todas', 'Todas'], ['mias', 'Mías'], ['papa', 'Papá']].map(function (f) {
+        const sel = filtroMedico === f[0];
+        return '<button type="button" class="filtro-btn' + (sel ? ' sel' : '') + '" data-accion="filtro-medico" data-filtro="' + f[0] + '" aria-pressed="' + sel + '">' + f[1] + '</button>';
+      }).join('') + '</div>';
+  }
+  let html = cabecera(sec, nombre) + filtro +
     '<h2 class="titulo-bloque" style="margin-top:0">' + (sec === 'medico' ? 'Próximas citas' : 'Próximos planes') + '</h2><div class="lista">' +
     (proximas.length ? proximas.map(function (c) { return tarjetaCitaLarga(c, false); }).join('')
       : '<div class="vacio">No hay nada apuntado. Pulsa «Apuntar» para añadir.</div>') + '</div>';
@@ -439,6 +460,12 @@ function contenidoPropuesta() {
     return '<div style="display:flex;flex-direction:column;gap:6px"><label class="etiqueta" for="f-' + id + '">' + etiqueta + '</label>' +
       '<textarea id="f-' + id + '" data-campo="' + id + '" class="' + (clase || 'area') + '" rows="' + filas + '">' + esc(valor) + '</textarea></div>';
   };
+  if (h.seccion === 'medico') {
+    // Por defecto, las citas son de Isabel; solo se marca si es de Papá.
+    const dePapa = c.persona === 'papa';
+    html += '<button type="button" id="boton-papa" class="boton-papa' + (dePapa ? ' sel' : '') + '" data-accion="alternar-papa" aria-pressed="' + dePapa + '">' +
+      '<span class="casilla-papa" aria-hidden="true">' + (dePapa ? SVG(ICONOS.check, 18) : '') + '</span>Es para Papá</button>';
+  }
   if (h.seccion === 'medico' || h.seccion === 'ocio') {
     html += '<div style="display:flex;flex-direction:column;gap:8px">' +
       fila('titulo', 'Qué', 'text', c.titulo) +
@@ -463,7 +490,7 @@ function contenidoPropuesta() {
 }
 
 function camposVacios() {
-  return { titulo: '', fecha: '', hora: '', lugar: '', notas: '', productos: '', texto: '', ingredientes: '', preparacion: '', fijada: false };
+  return { titulo: '', fecha: '', hora: '', lugar: '', notas: '', persona: '', productos: '', texto: '', ingredientes: '', preparacion: '', fijada: false };
 }
 
 function abrirApuntar(seccion, dictarYa) {
@@ -498,6 +525,7 @@ function interpretarDictado() {
     nuevo.fecha = p.fecha || '';
     nuevo.hora = p.hora || '';
     nuevo.lugar = p.lugar || '';
+    if (h.seccion === 'medico') nuevo.persona = p.persona || '';
   } else if (h.seccion === 'compra') {
     nuevo.productos = (p.productos || []).join('\n');
   } else if (h.seccion === 'varios') {
@@ -510,6 +538,7 @@ function interpretarDictado() {
   if (anterior !== h.seccion) {
     $('#propuesta').innerHTML = contenidoPropuesta();
   } else {
+    if ('persona' in nuevo) pintarBotonPapa();
     Object.keys(nuevo).forEach(function (k) {
       const el = $('#f-' + k);
       if (el && !h.tocados[k] && el.value !== h.campos[k]) el.value = h.campos[k];
@@ -518,11 +547,20 @@ function interpretarDictado() {
   }
 }
 
+function pintarBotonPapa() {
+  const b = $('#boton-papa');
+  if (!b || !hojaActual) return;
+  const dePapa = hojaActual.campos.persona === 'papa';
+  b.classList.toggle('sel', dePapa);
+  b.setAttribute('aria-pressed', dePapa);
+  b.querySelector('.casilla-papa').innerHTML = dePapa ? SVG(ICONOS.check, 18) : '';
+}
+
 function abrirEditarCita(id) {
   const c = (datos.citas || []).find(function (x) { return x.id === id; });
   if (!c) return;
   const campos = Object.assign(camposVacios(), {
-    titulo: c.titulo, fecha: c.fecha, hora: c.hora, lugar: c.lugar, notas: c.notas
+    titulo: c.titulo, fecha: c.fecha, hora: c.hora, lugar: c.lugar, notas: c.notas, persona: c.persona || ''
   });
   abrirHoja({ tipo: 'editar', tabla: 'citas', id: id, seccion: c.seccion, campos: campos, tocados: {} });
 }
@@ -551,12 +589,14 @@ function guardarHoja(boton) {
     const d = {
       seccion: h.seccion,
       titulo: c.titulo.trim() || (h.seccion === 'medico' ? 'Cita médica' : 'Plan'),
-      fecha: c.fecha, hora: c.hora, lugar: c.lugar.trim(), notas: c.notas.trim()
+      fecha: c.fecha, hora: c.hora, lugar: c.lugar.trim(), notas: c.notas.trim(),
+      persona: h.seccion === 'medico' && c.persona === 'papa' ? 'papa' : ''
     };
     promesa = h.tipo === 'apuntar'
       ? api('crear', { tabla: 'citas', datos: d }).then(function (r) { datos.citas.push(r); })
       : api('actualizar', { tabla: 'citas', id: h.id, datos: d }).then(function (r) { reemplazar('citas', r); });
-    mensaje = 'Guardado en ' + (h.seccion === 'medico' ? 'Médico' : 'Ocio') + (d.fecha ? ' · ' + fechaLarga(d.fecha) : '');
+    mensaje = 'Guardado en ' + (h.seccion === 'medico' ? (d.persona === 'papa' ? 'Médico de Papá' : 'Médico') : 'Ocio') +
+      (d.fecha ? ' · ' + fechaLarga(d.fecha) : '');
   } else if (h.seccion === 'compra') {
     const productos = c.productos.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     if (!productos.length) { avisar('Escribe o dicta algún producto'); return; }
@@ -805,6 +845,12 @@ document.addEventListener('click', function (e) {
       render();
       break;
     }
+    case 'filtro-medico': filtroMedico = el.getAttribute('data-filtro'); render(); break;
+    case 'alternar-papa':
+      hojaActual.campos.persona = hojaActual.campos.persona === 'papa' ? '' : 'papa';
+      hojaActual.tocados.persona = true;
+      pintarBotonPapa();
+      break;
     case 'marcar': marcarProducto(id); break;
     case 'quitar-comprados': quitarComprados(); break;
     case 'anadir-compra': anadirProductosDesdeCampo(); break;

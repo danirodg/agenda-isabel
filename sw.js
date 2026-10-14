@@ -1,6 +1,6 @@
 // Service worker: guarda la app para que abra rápido y sin conexión.
 // Los datos (Google) nunca se guardan aquí: siempre se piden en directo.
-const CACHE = 'agenda-isabel-v8';
+const CACHE = 'agenda-isabel-v9';
 const ARCHIVOS = [
   './',
   './index.html',

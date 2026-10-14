@@ -92,6 +92,13 @@ function interpretar(texto, seccionForzada, hoy) {
     return { seccion: 'receta', titulo: mayuscula(compactar(par).o) || original };
   }
 
+  // --- ¿Es una cita de Papá? ("urólogo de papá", "Fernando dentista", "para mi marido")
+  let persona = '';
+  if (seccion === 'medico' &&
+      quitarDe(par, /(?:^| )(?:(?:para|de|con|a|del) )?(?:papa|papi|mi marido|fernando)\b/)) {
+    persona = 'papa';
+  }
+
   // --- Hora
   let hora = '';
   let horas = null, minutos = 0, periodo = '';
@@ -195,6 +202,7 @@ function interpretar(texto, seccionForzada, hoy) {
     fecha: fecha,
     hora: hora,
     lugar: lugar,
+    persona: persona,
     faltaFecha: !fecha
   };
 }
